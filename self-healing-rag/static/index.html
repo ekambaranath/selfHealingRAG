@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Self-Healing RAG</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --bg2: #0d1117;
+    --bg3: #161b22;
+    --border: #21262d;
+    --green: #3fb950;
+    --green-dim: #1a4028;
+    --blue: #58a6ff;
+    --orange: #f0883e;
+    --red: #f85149;
+    --yellow: #d29922;
+    --text: #c9d1d9;
+    --text-dim: #6e7681;
+    --text-bright: #e6edf3;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--green-dim);
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+  }
+
+  .logo-text {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-bright);
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  #status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s;
+  }
+
+  .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.red { background: var(--red); }
+  .dot.yellow { background: var(--yellow); }
+
+  /* ── Main Layout ── */
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Chat Panel ── */
+  #chat-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scroll-behavior: smooth;
+  }
+
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .message {
+    max-width: 820px;
+    animation: fadeUp 0.3s ease;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .message.user { align-self: flex-end; }
+  .message.assistant { align-self: flex-start; width: 100%; }
+
+  .msg-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .user .msg-label { text-align: right; color: var(--blue); }
+  .assistant .msg-label { color: var(--green); }
+
+  .msg-bubble {
+    padding: 14px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .user .msg-bubble {
+    background: #1c2a3a;
+    border: 1px solid #2a4060;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .assistant .msg-bubble {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .assistant.error .msg-bubble {
+    border-color: var(--red);
+    background: #1a0d0d;
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  /* ── Thinking / Loading ── */
+  .thinking .msg-bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Pipeline Steps ── */
+  .steps-container {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .steps-header {
+    background: var(--bg2);
+    padding: 7px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .steps-header:hover { background: var(--bg3); }
+
+  .steps-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: #0b0f15;
+  }
+
+  .step-line {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+  }
+
+  .step-line.pass { color: var(--green); }
+  .step-line.fail { color: var(--red); }
+  .step-line.info { color: var(--blue); }
+  .step-line.warn { color: var(--yellow); }
+
+  /* ── Meta row ── */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .badge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .badge.success { background: var(--green-dim); color: var(--green); border: 1px solid #2a5a38; }
+  .badge.fallback { background: #2a1a0a; color: var(--yellow); border: 1px solid #5a3a10; }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 280px;
+    background: var(--bg2);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .sidebar-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* ── Sample Questions ── */
+  .sample-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    margin-bottom: 6px;
+    transition: all 0.15s;
+    font-family: var(--sans);
+    line-height: 1.4;
+  }
+
+  .sample-btn:hover {
+    border-color: var(--blue);
+    color: var(--text-bright);
+    background: #161e2e;
+  }
+
+  /* ── Config Panel ── */
+  .config-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .config-label { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+  .config-val { color: var(--blue); font-family: var(--mono); font-size: 11px; }
+
+  /* ── Ingest Panel ── */
+  #ingest-textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px;
+    resize: vertical;
+    min-height: 80px;
+    outline: none;
+    line-height: 1.5;
+  }
+
+  #ingest-textarea:focus { border-color: var(--blue); }
+
+  .btn-small {
+    margin-top: 8px;
+    width: 100%;
+    padding: 7px;
+    background: #1c2a3a;
+    border: 1px solid var(--blue);
+    border-radius: 5px;
+    color: var(--blue);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-small:hover { background: #223040; }
+  .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Input Bar ── */
+  #input-bar {
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    gap: 12px;
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+
+  #query-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    resize: none;
+    min-height: 46px;
+    max-height: 160px;
+  }
+
+  #query-input:focus { border-color: var(--green); }
+  #query-input::placeholder { color: var(--text-dim); }
+
+  #send-btn {
+    padding: 12px 24px;
+    background: var(--green-dim);
+    border: 1px solid var(--green);
+    border-radius: 8px;
+    color: var(--green);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    align-self: flex-end;
+  }
+
+  #send-btn:hover { background: #1f5a35; }
+  #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Welcome Message ── */
+  .welcome {
+    text-align: center;
+    padding: 40px 20px;
+    opacity: 0.6;
+  }
+
+  .welcome h2 {
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+
+  .welcome p {
+    font-size: 13px;
+    color: var(--text-dim);
+    max-width: 400px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  #doc-count-val { color: var(--green); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🔄</div>
+    <div>
+      <div class="logo-text">Self-Healing RAG</div>
+      <div class="logo-sub">LangGraph · Ollama · ChromaDB</div>
+    </div>
+  </div>
+  <div id="status-bar">
+    <div class="status-item">
+      <div class="dot" id="ollama-dot"></div>
+      <span id="ollama-label">bedrock</span>
+    </div>
+    <div class="status-item">
+      <div class="dot green"></div>
+      <span><span id="doc-count-val">—</span> chunks</span>
+    </div>
+    <div class="status-item">
+      <div class="dot" id="health-dot"></div>
+      <span id="health-label">checking…</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="chat-panel">
+    <div id="messages">
+      <div class="welcome">
+        <h2>// Self-Healing RAG</h2>
+        <p>Ask a question. The pipeline retrieves, generates, then the critic agent checks for hallucinations. If it fails, the query is rewritten and retried — automatically.</p>
+      </div>
+    </div>
+    <div id="input-bar">
+      <textarea id="query-input" placeholder="Ask a question about the indexed documents…" rows="1"></textarea>
+      <button id="send-btn">▶ Run</button>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">// sample queries</div>
+      <button class="sample-btn" onclick="setQuery(this)">What is machine learning?</button>
+      <button class="sample-btn" onclick="setQuery(this)">Explain the transformer architecture</button>
+      <button class="sample-btn" onclick="setQuery(this)">What are the benefits of RAG systems?</button>
+      <button class="sample-btn" onclick="setQuery(this)">How does vector similarity search work?</button>
+      <button class="sample-btn" onclick="setQuery(this)">What is LangGraph used for?</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">// pipeline config</div>
+      <div class="config-row">
+        <span class="config-label">MAX_RETRIES</span>
+        <span class="config-val" id="cfg-retries">—</span>
+      </div>
+      <div class="config-row">
+        <span class="config-label">MODEL</span>
+        <span class="config-val" id="cfg-model">—</span>
+      </div>
+      <div class="config-row">
+        <span class="config-label">EMBEDDINGS</span>
+        <span class="config-val">MiniLM-L6 (local)</span>
+      </div>
+      <div class="config-row">
+        <span class="config-label">VECTOR_DB</span>
+        <span class="config-val">ChromaDB</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section" style="flex:1; overflow-y:auto;">
+      <div class="sidebar-title">// index new text</div>
+      <textarea id="ingest-textarea" placeholder="Paste any text here to add it to the knowledge base…"></textarea>
+      <button class="btn-small" id="ingest-btn" onclick="ingestText()">⬆ Index Text</button>
+      <div id="ingest-status" style="font-family:var(--mono);font-size:11px;margin-top:6px;color:var(--text-dim);"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = '';  // same origin
+
+// ── Health Check ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API}/health`);
+    const data = await res.json();
+
+    document.getElementById('doc-count-val').textContent = data.documents_indexed;
+    document.getElementById('cfg-retries').textContent = data.max_retries;
+
+    // Shorten model name for display
+    
+    document.getElementById('cfg-model').textContent = data.ollama_model;
+
+    const bedrockDot = document.getElementById('ollama-dot');
+    const bedrockLabel = document.getElementById('ollama-label');
+    if (data.ollama_online) {
+      bedrockDot.className = 'dot green';
+      bedrockLabel.textContent = 'ollama ✓';
+    } else {
+      bedrockDot.className = 'dot red';
+      bedrockLabel.textContent = 'ollama ✗';
+    }
+
+    document.getElementById('health-dot').className = 'dot green';
+    document.getElementById('health-label').textContent = 'online';
+  } catch (e) {
+    document.getElementById('health-dot').className = 'dot red';
+    document.getElementById('health-label').textContent = 'offline';
+  }
+}
+
+checkHealth();
+setInterval(checkHealth, 15000);
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+const messagesEl = document.getElementById('messages');
+const queryInput = document.getElementById('query-input');
+const sendBtn = document.getElementById('send-btn');
+
+function scrollBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function setQuery(btn) {
+  queryInput.value = btn.textContent.trim();
+  queryInput.focus();
+}
+
+function addMessage(role, content, extra = {}) {
+  // Remove welcome if present
+  const welcome = messagesEl.querySelector('.welcome');
+  if (welcome) welcome.remove();
+
+  const div = document.createElement('div');
+  div.className = `message ${role}${extra.error ? ' error' : ''}`;
+
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = role === 'user' ? '> you' : extra.thinking ? '⟳ pipeline' : '◆ answer';
+  div.appendChild(label);
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+
+  if (extra.thinking) {
+    bubble.innerHTML = `<div class="spinner"></div><span id="thinking-text">Retrieving documents…</span>`;
+  } else {
+    bubble.textContent = content;
+  }
+
+  div.appendChild(bubble);
+
+  // Steps audit trail
+  if (extra.steps && extra.steps.length > 0) {
+    const stepsWrap = document.createElement('div');
+    stepsWrap.className = 'steps-container';
+
+    const retriesText = extra.retries > 0 ? ` · ${extra.retries} retr${extra.retries === 1 ? 'y' : 'ies'}` : '';
+    const header = document.createElement('div');
+    header.className = 'steps-header';
+    header.innerHTML = `<span>// pipeline trace${retriesText}</span><span>▼</span>`;
+    header.onclick = () => {
+      body.style.display = body.style.display === 'none' ? '' : 'none';
+      header.querySelector('span:last-child').textContent = body.style.display === 'none' ? '▶' : '▼';
+    };
+    stepsWrap.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'steps-body';
+
+    extra.steps.forEach(step => {
+      const line = document.createElement('div');
+      line.className = 'step-line';
+      if (step.includes('✅')) line.classList.add('pass');
+      else if (step.includes('❌')) line.classList.add('fail');
+      else if (step.includes('⚠️')) line.classList.add('warn');
+      else line.classList.add('info');
+      line.textContent = step;
+      body.appendChild(line);
+    });
+
+    stepsWrap.appendChild(body);
+    div.appendChild(stepsWrap);
+  }
+
+  // Meta row
+  if (extra.elapsed !== undefined) {
+    const meta = document.createElement('div');
+    meta.className = 'meta-row';
+
+    const badge = document.createElement('span');
+    badge.className = `badge ${extra.success ? 'success' : 'fallback'}`;
+    badge.textContent = extra.success ? 'GROUNDED' : 'FALLBACK';
+    meta.appendChild(badge);
+
+    const elapsed = document.createElement('span');
+    elapsed.textContent = `${extra.elapsed}s`;
+    meta.appendChild(elapsed);
+
+    div.appendChild(meta);
+  }
+
+  messagesEl.appendChild(div);
+  scrollBottom();
+  return div;
+}
+
+let thinkingEl = null;
+let thinkingPhase = 0;
+const thinkingPhases = [
+  'Retrieving documents…',
+  'Grading relevance…',
+  'Generating answer…',
+  'Critic checking for hallucinations…',
+];
+
+async function sendQuery() {
+  const query = queryInput.value.trim();
+  if (!query) return;
+
+  queryInput.value = '';
+  queryInput.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  addMessage('user', query);
+
+  thinkingEl = addMessage('assistant', '', { thinking: true });
+  thinkingPhase = 0;
+
+  const phaseInterval = setInterval(() => {
+    thinkingPhase = (thinkingPhase + 1) % thinkingPhases.length;
+    const el = document.getElementById('thinking-text');
+    if (el) el.textContent = thinkingPhases[thinkingPhase];
+  }, 2000);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
+    const res = await fetch(`${API}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    clearInterval(phaseInterval);
+    if (thinkingEl) thinkingEl.remove();
+    thinkingEl = null;
+
+    if (!res.ok) {
+      let errMsg = res.statusText || 'Unknown server error';
+      try {
+        const err = await res.json();
+        errMsg = err.detail || errMsg;
+      } catch (_) { /* empty body — server likely crashed or OOM */ }
+      addMessage('assistant', `Error: ${errMsg}`, { error: true });
+    } else {
+      const data = await res.json();
+      addMessage('assistant', data.answer, {
+        steps: data.steps,
+        retries: data.retries,
+        success: data.success,
+        elapsed: data.elapsed_seconds,
+      });
+      checkHealth();  // refresh doc count etc
+    }
+  } catch (e) {
+    clearInterval(phaseInterval);
+    if (thinkingEl) thinkingEl.remove();
+    addMessage('assistant', `Network error: ${e.message}`, { error: true });
+  }
+
+  sendBtn.disabled = false;
+  queryInput.focus();
+}
+
+sendBtn.addEventListener('click', sendQuery);
+
+queryInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendQuery();
+  }
+});
+
+// Auto-resize textarea
+queryInput.addEventListener('input', () => {
+  queryInput.style.height = 'auto';
+  queryInput.style.height = Math.min(queryInput.scrollHeight, 160) + 'px';
+});
+
+// ── Ingest ────────────────────────────────────────────────────────────────────
+async function ingestText() {
+  const text = document.getElementById('ingest-textarea').value.trim();
+  if (!text) return;
+
+  const btn = document.getElementById('ingest-btn');
+  const status = document.getElementById('ingest-status');
+  btn.disabled = true;
+  status.textContent = 'Indexing…';
+  status.style.color = 'var(--text-dim)';
+
+  try {
+    const res = await fetch(`${API}/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, source: 'manual_upload' }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.textContent = `✅ Added ${data.chunks_added} chunks`;
+      status.style.color = 'var(--green)';
+      document.getElementById('ingest-textarea').value = '';
+      checkHealth();
+    } else {
+      status.textContent = `❌ ${data.detail}`;
+      status.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = 'var(--red)';
+  }
+
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>

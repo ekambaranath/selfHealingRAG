@@ -1,0 +1,52 @@
+LangGraph: Building Stateful, Cyclical AI Workflows
+
+LangGraph is a library built on top of LangChain that enables developers to create stateful, multi-actor applications using a graph-based programming model. Unlike simple linear LangChain chains, LangGraph supports cycles — meaning a node can loop back to an earlier node based on conditions, making it ideal for agentic workflows that require iteration and self-correction.
+
+Core Concepts
+
+State: LangGraph uses a TypedDict to define the state that flows through the graph. Every node receives the full state and returns a partial state update. The framework merges updates automatically. Using Python's Annotated type with operator.add enables list fields to accumulate values (like audit logs) rather than replace them.
+
+Nodes: Functions that receive state, perform some computation (call an LLM, run a search, evaluate a condition), and return updated state. Nodes are pure functions — they don't have side effects on global state.
+
+Edges: Connections between nodes. LangGraph supports:
+- Direct edges: Always go from node A to node B
+- Conditional edges: Route to different nodes based on a function that inspects the current state
+
+Entry and Exit Points: Every graph has a set_entry_point() (where execution begins) and END nodes (where execution terminates).
+
+Why LangGraph for Self-Healing RAG
+
+Traditional LangChain chains are DAGs (directed acyclic graphs) — they can't loop. Self-healing RAG requires loops: if the critic agent rejects an answer, we need to go back to the retrieval step with a reformulated query. LangGraph's cyclical graph support makes this natural to express.
+
+The pipeline is modeled as:
+1. rewrite_query node: formats or reformulates the query
+2. retrieve node: fetches documents from ChromaDB
+3. grade_relevance node: critic checks document quality
+4. generate node: LLM produces an answer
+5. grade_hallucination node: critic checks answer grounding
+6. finalize node: clean exit on success
+7. fallback node: graceful degradation on max retries
+
+Conditional edges after grade_relevance and grade_hallucination create the self-healing loops.
+
+State Management in Practice
+
+LangGraph's state accumulation is critical for observability. By defining steps as Annotated[List[str], operator.add], every node can append to the audit trail without overwriting previous entries. This gives users full visibility into what the pipeline did on each run, including how many retries occurred and why.
+
+Comparison to Other Orchestration Frameworks
+
+- LangChain LCEL: Linear only, no cycles, good for simple pipelines
+- LangGraph: Cyclical, stateful, best for agentic/self-correcting workflows
+- CrewAI: Multi-agent with role-based design, higher abstraction
+- AutoGen: Microsoft's multi-agent framework, conversation-based
+- Prefect/Airflow: General workflow orchestration, not LLM-specific
+
+For production RAG with self-correction, LangGraph is the most natural fit because it gives fine-grained control over the graph topology while keeping state management clean.
+
+Streaming and Observability
+
+LangGraph supports .stream() which yields intermediate state snapshots after each node executes. This enables real-time progress updates in UIs — you can show the user "Retrieving..." then "Grading relevance..." then "Generating..." as each step completes, rather than showing a spinner for the full duration.
+
+LangSmith Integration
+
+LangGraph integrates natively with LangSmith, Anthropic's observability platform for LLM applications. With a LANGCHAIN_API_KEY set, every graph execution is automatically traced with full input/output visibility at each node, token counts, latency breakdowns, and retry paths. This is invaluable for debugging self-healing pipelines in production.

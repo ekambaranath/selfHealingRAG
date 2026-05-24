@@ -1,0 +1,64 @@
+Hallucination in Large Language Models: Causes, Detection, and Mitigation
+
+Hallucination refers to the phenomenon where an LLM generates text that is factually incorrect, fabricated, or not supported by its input context. It is one of the most significant challenges in deploying LLMs in production environments.
+
+Types of Hallucination
+
+Intrinsic hallucination: The model contradicts information explicitly provided in the input context. For example, if the context says "the revenue was $50M" and the model says "the revenue was $80M."
+
+Extrinsic hallucination: The model generates information that can neither be confirmed nor contradicted by the input — it simply invents facts not present in the source material.
+
+Prompt-induced hallucination: Certain phrasings of questions encourage the model to fabricate answers rather than acknowledge uncertainty. For example, "Tell me exactly when X happened" pressures the model to give a specific date even if it doesn't know.
+
+Why Models Hallucinate
+
+LLMs are trained to produce fluent, confident-sounding text. During training, they learn statistical patterns in language — they don't have an explicit "I don't know" mechanism. When asked about something outside their knowledge, the path of least resistance is to generate plausible-sounding content rather than express uncertainty.
+
+In RAG systems, hallucination occurs when:
+1. Retrieved documents don't contain the answer, but the model generates one anyway
+2. The model uses its parametric memory instead of the provided context
+3. The model misinterprets or misquotes the context
+
+Detection Approaches
+
+Natural Language Inference (NLI): Treating hallucination detection as an entailment task — does the answer logically follow from the context? NLI classifiers (like DeBERTa fine-tuned on NLI datasets) can score this efficiently.
+
+LLM-as-judge: Using a second LLM to evaluate whether the first LLM's output is grounded in the context. This is the approach used in Self-Healing RAG's critic agent. Advantages: flexible, no specialized training needed. Disadvantages: adds latency and cost.
+
+RAGAS: A framework for automated RAG evaluation that computes metrics including faithfulness (is the answer grounded?), answer relevancy (does the answer address the question?), and context relevancy (are retrieved docs relevant?).
+
+SelfCheckGPT: Samples multiple responses from the LLM and checks for consistency. Inconsistencies across samples suggest hallucination.
+
+The Self-Healing RAG Approach
+
+Self-Healing RAG addresses hallucination through a two-stage critic system:
+
+Stage 1 — Relevance grading: Before generation, a critic agent evaluates whether the retrieved documents can plausibly answer the query. If they can't, the query is reformulated and retrieval is retried. This prevents the "hallucinate when context is inadequate" failure mode.
+
+Stage 2 — Hallucination grading: After generation, a critic agent evaluates whether every claim in the generated answer is supported by the retrieved documents. If hallucination is detected, the pipeline retries with a reformulated query to retrieve better-grounding documents.
+
+Query Reformulation Strategies
+
+When the critic rejects a response, naively resubmitting the same query will retrieve the same documents and generate the same (flawed) answer. Effective query reformulation strategies:
+
+1. Synonym expansion: Replace key terms with synonyms or related concepts. "ML model training" → "machine learning optimization procedures"
+2. Simplification: Remove complex phrasing and get to core keywords. "What is the regulatory framework governing..." → "regulation rules"
+3. Decomposition: Break a complex query into simpler sub-questions
+4. HyDE (Hypothetical Document Embeddings): Generate a hypothetical answer first, then search for documents similar to that hypothetical answer
+
+Graceful Degradation
+
+When max retries are exhausted, a well-designed RAG system should:
+1. NOT return a hallucinated answer with false confidence
+2. Clearly communicate that it lacks sufficient information
+3. Optionally suggest what information would be needed to answer
+
+The honest response "I don't have enough information in the provided documents to answer this accurately" is always preferable to a confident but fabricated answer, particularly in enterprise, medical, legal, or financial contexts.
+
+Production Metrics to Track
+
+- Hallucination rate: Percentage of responses containing ungrounded claims
+- Retry rate: Percentage of queries requiring at least one retry
+- Fallback rate: Percentage of queries hitting max retries
+- Average retries: Mean number of retries across successful queries
+- Latency per retry: Additional time added per retry loop

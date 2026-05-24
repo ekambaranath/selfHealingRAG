@@ -1,0 +1,60 @@
+Claude and AWS Bedrock: Enterprise LLM Deployment
+
+Claude is Anthropic's family of AI assistants, designed with safety and helpfulness as core principles. Claude models are available directly via Anthropic's API and through AWS Bedrock, Amazon's managed AI service.
+
+Claude Model Family
+
+Claude 3.5 Sonnet: The most capable model in the Claude 3.5 family. Excellent at complex reasoning, code generation, analysis, and instruction following. Available on Bedrock as anthropic.claude-3-5-sonnet-20241022-v2:0.
+
+Claude 3 Haiku: The fastest and most cost-efficient Claude 3 model. Suitable for simpler classification tasks, quick Q&A, and high-throughput use cases.
+
+Claude 3 Opus: Anthropic's most capable model for highly complex tasks. Higher latency and cost, but best performance on difficult reasoning.
+
+AWS Bedrock Overview
+
+AWS Bedrock is a fully managed service that provides access to foundation models from leading AI companies (Anthropic, Meta, Mistral, Cohere, and Amazon's own Titan models) through a unified API. Key benefits:
+
+1. No infrastructure to manage: Bedrock handles model serving, scaling, and availability.
+2. AWS security model: Models run within the AWS security perimeter. Data doesn't leave your account by default.
+3. VPC support: You can route Bedrock traffic through a VPC endpoint, keeping it entirely on private network.
+4. IAM integration: Access control is managed through standard AWS IAM roles and policies.
+5. Enterprise compliance: SOC 2, HIPAA, and other compliance certifications available.
+
+Authentication Methods
+
+Standard IAM: Use an AWS access key ID and secret access key. The boto3 SDK picks these up from environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) or from ~/.aws/credentials.
+
+Bearer Token: Some Bedrock configurations support a bearer token for authentication. This is passed as AWS_BEARER_TOKEN_BEDROCK in environment variables and is used in certain enterprise and preview access configurations.
+
+IAM Role (recommended for production): Attach an IAM role with AmazonBedrockFullAccess or a custom policy scoped to specific model ARNs. On EC2, ECS, Lambda, or EKS, the SDK automatically picks up role credentials.
+
+Using Claude via Bedrock with LangChain
+
+The langchain-aws package provides ChatBedrockConverse, a LangChain-compatible wrapper for Bedrock's Converse API. The Converse API provides a unified interface across all Bedrock models:
+
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-5",
+    region_name="us-east-2",
+    max_tokens=1024,
+    temperature=0.1,
+)
+
+response = llm.invoke("What is retrieval-augmented generation?")
+
+Pricing (Claude 3.5 Sonnet on Bedrock)
+
+Input tokens: $3.00 per million tokens
+Output tokens: $15.00 per million tokens
+
+A typical RAG query with 1,500 input tokens and 300 output tokens costs approximately:
+(1500 / 1,000,000 × $3.00) + (300 / 1,000,000 × $15.00) = $0.0045 + $0.0045 = $0.009
+
+Cross-Region Inference
+
+AWS Bedrock supports cross-region inference using model IDs prefixed with us., eu., or ap.. For example, us.anthropic.claude-sonnet-4-5 routes traffic across US regions for higher throughput and availability. This is the recommended approach for production workloads.
+
+Bedrock vs Direct Anthropic API
+
+The Anthropic API (api.anthropic.com) uses an API key for authentication and is simpler to set up. AWS Bedrock adds enterprise features (VPC, IAM, compliance) but requires AWS account setup. For GitHub Codespaces and personal projects, either works. For enterprise production deployments, Bedrock is typically preferred for security and compliance reasons.

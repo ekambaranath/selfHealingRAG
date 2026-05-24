@@ -1,0 +1,61 @@
+Retrieval-Augmented Generation (RAG): A Comprehensive Overview
+
+Retrieval-Augmented Generation (RAG) is an AI framework that combines large language models (LLMs) with external knowledge retrieval to produce more accurate, grounded, and up-to-date responses.
+
+How RAG Works
+
+A standard RAG pipeline has three stages:
+1. Indexing: Documents are chunked, embedded into dense vectors, and stored in a vector database.
+2. Retrieval: When a query arrives, the system performs semantic search to find the most relevant document chunks.
+3. Generation: The retrieved chunks are passed as context to the LLM, which generates an answer grounded in the provided material.
+
+This approach allows LLMs to cite external sources and reduces hallucination rates significantly compared to pure parametric (knowledge-baked-in) generation.
+
+Why RAG Matters
+
+Large language models have a knowledge cutoff — they cannot access information beyond their training date. RAG solves this by connecting the model to a live or updatable knowledge base. This is critical for enterprise use cases where documents change frequently (legal contracts, product manuals, research papers).
+
+Additionally, RAG systems are more interpretable: every claim the model makes can theoretically be traced back to a retrieved document, making audits and fact-checking feasible.
+
+Limitations of Standard RAG
+
+Standard RAG pipelines are linear: retrieve → generate. They have no mechanism to check whether the retrieved documents are actually relevant, or whether the generated answer faithfully reflects those documents. This leads to two failure modes:
+
+1. Relevance failure: The retrieved chunks are topically related but don't contain the specific information needed to answer the question.
+2. Hallucination: The LLM generates a plausible-sounding answer that is not grounded in the retrieved material. This is especially dangerous in high-stakes domains like healthcare or finance.
+
+Self-Healing RAG addresses these failure modes by adding a critic agent that evaluates both retrieval quality and answer grounding before returning a response to the user.
+
+Vector Databases
+
+Vector databases store high-dimensional embeddings and support efficient approximate nearest-neighbor (ANN) search. Popular options include:
+
+- ChromaDB: Open-source, runs locally, great for prototyping
+- Pinecone: Managed cloud service, scales to billions of vectors
+- Weaviate: Open-source with hybrid search support
+- Qdrant: High-performance, written in Rust
+- FAISS: Facebook's library, used as a building block by many systems
+
+The choice of vector database depends on scale, latency requirements, and whether you need managed infrastructure.
+
+Embeddings
+
+Embeddings are numerical representations of text where semantically similar text is mapped to nearby points in high-dimensional space. Common embedding models:
+
+- OpenAI text-embedding-ada-002: High quality, API-based, costs money
+- sentence-transformers all-MiniLM-L6-v2: Lightweight, runs locally for free, 384 dimensions
+- sentence-transformers all-mpnet-base-v2: Higher quality, 768 dimensions, still local
+- Cohere Embed: Multilingual, API-based
+
+For the Self-Healing RAG pipeline, we use all-MiniLM-L6-v2 because it requires no API key and runs fast on CPU, making it ideal for GitHub Codespaces environments.
+
+Chunking Strategies
+
+How you split documents significantly impacts retrieval quality:
+
+- Fixed-size chunking: Split every N characters. Simple but ignores semantic boundaries.
+- Recursive character splitting: Split by paragraph, then sentence, then word — preserving semantic coherence. This is the most commonly used approach.
+- Semantic chunking: Use an embedding model to detect topic shifts and split there. Higher quality but slower.
+- Document-specific: PDF-aware splitting preserves table structures; code-aware splitting respects function/class boundaries.
+
+A chunk size of 500 tokens with 50-token overlap is a common starting point for general text.
