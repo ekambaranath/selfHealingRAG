@@ -212,3 +212,137 @@ CHUNK_SIZE=500            # Document chunk size for indexing
 | ⏳ Request hang | `AbortController` with 2-minute timeout on all fetch calls |
 | 🔇 Silent Ollama crash | Generator (120s) and critic (60s) timeouts added to `ChatOllama` |
 | 💾 OOM on 16GB | Default model switched from `llama3.1:8b` → `tinyllama` |
+
+---
+
+## 🆚 Normal RAG vs Self-Healing RAG — Real Example
+
+> **Query:** *"What is the maximum context window of LangGraph's stateful agents?"*
+
+---
+
+### ❌ Normal RAG — What Goes Wrong
+
+```
+User Query
+    │
+    ▼
+Vector Retrieval  ──►  Returns 4 chunks about "LangGraph basics" and
+                       "agent memory" — loosely related, not specific
+    │
+    ▼
+LLM Generator     ──►  Sees vague docs, fills in the gaps with
+                       HALLUCINATED facts:
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │  "LangGraph stateful agents support a context window of     │
+    │   32,768 tokens by default, with an optional extended mode  │
+    │   of 128k tokens available in LangGraph Cloud."             │
+    └─────────────────────────────────────────────────────────────┘
+         ↑ WRONG. None of this is in the documents.
+         ↑ But the user has no way to know that.
+
+    ▼
+User receives a confident, fabricated answer. 🚨
+No retry. No warning. No fallback.
+```
+
+---
+
+### ✅ Self-Healing RAG — How It Recovers
+
+```
+User Query: "What is the maximum context window of LangGraph's stateful agents?"
+    │
+    ▼
+┌─────────────────┐
+│  Query Rewriter  │  Pass 1: uses original query as-is
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Vector Retrieval │  Retrieves 4 chunks → loosely about LangGraph
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│  🔎 Relevance Critic                                      │
+│                                                           │
+│  verdict : ❌ FAIL                                        │
+│  score   : 0.31                                           │
+│  reason  : "Docs discuss LangGraph setup and graph edges  │
+│             but contain no information about context      │
+│             windows or token limits."                     │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Increment Retry  │  retry_count: 0 → 1
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Query Rewriter  │  Retry 1: reformulates →
+│                  │  "LangGraph token limit state memory capacity"
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Vector Retrieval │  Retrieves 4 new chunks → more specific docs
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│  🔎 Relevance Critic                                      │
+│                                                           │
+│  verdict : ✅ PASS                                        │
+│  score   : 0.91                                           │
+│  reason  : "Documents directly address LangGraph state    │
+│             management and memory constraints."           │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  LLM Generator   │  Generates answer strictly from the new docs
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│  🧪 Hallucination Critic                                  │
+│                                                           │
+│  verdict : ✅ PASS                                        │
+│  score   : 0.95                                           │
+│  reason  : "All claims are directly supported by the      │
+│             retrieved context documents."                 │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│  ✅ Final Answer (verified, grounded)                     │
+│                                                           │
+│  "Based on the indexed documents, LangGraph does not      │
+│   impose a fixed context window on stateful agents —      │
+│   memory is managed via the State schema you define.      │
+│   Token limits depend on the underlying LLM you connect   │
+│   (e.g. Ollama, OpenAI), not LangGraph itself."           │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 📊 Side-by-Side Comparison
+
+| | Normal RAG | Self-Healing RAG |
+|---|---|---|
+| **Bad retrieval caught?** | ❌ Never | ✅ Relevance critic rejects it |
+| **Query reformulated?** | ❌ Never | ✅ Rewritten on every retry |
+| **Hallucination detected?** | ❌ Never | ✅ Hallucination critic blocks it |
+| **User gets wrong answer?** | ✅ Always | ❌ Blocked before delivery |
+| **Retries on failure?** | ❌ No | ✅ Up to 3× with better queries |
+| **Honest when it can't answer?** | ❌ Fabricates | ✅ Graceful fallback |
+| **Audit trail?** | ❌ None | ✅ Full pipeline trace per query |
+| **Cost** | Low | ~3× per query (3 LLM calls) |
+
+> **The tradeoff:** Self-Healing RAG makes 3 LLM calls per query instead of 1.
+> On a local model like TinyLlama this costs **$0.00** and takes ~30–60s.
+> The accuracy gain is worth it for any production use case.
